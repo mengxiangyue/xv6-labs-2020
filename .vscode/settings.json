@@ -1,5 +1,7 @@
 {
     "files.associations": {
-        "cstdio": "c"
+        "cstdio": "c",
+        "atomic": "cpp",
+        "sstream": "cpp"
     }
 }
