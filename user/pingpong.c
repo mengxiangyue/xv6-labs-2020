@@ -19,6 +19,7 @@ main(int argc, char *argv[])
   if (pid > 0) // parent
   {
     int n = write(p[1], str_ping, buffer_size);
+    close(p[1]);
     if (n != 4)
     {
       fprintf(2, "parent: write error\n");
@@ -44,15 +45,19 @@ main(int argc, char *argv[])
     exit(0);
     
   } else if (pid == 0) { // child process
+    close(0);
+    dup(p[0]);
     int n = read(p[0], buf, buffer_size);
     if (n != 4)
     {
       fprintf(2, "child: read error\n");
       exit(1);
     }
+    close(p[0]);
     fprintf(1, "child receive:: %d, %s\n", getpid(), buf);
     fprintf(1, "%d: received %s\n", getpid(), buf);
     n = write(p[1], str_pong, buffer_size);
+    close(p[1]);
     if (n != 4)
     {
       fprintf(2, "child: write error\n");
