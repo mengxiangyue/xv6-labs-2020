@@ -14,6 +14,7 @@ main(int argc, char *argv[])
     exit(1);
   }
 
+  // call kenel trace function and store the argument in register a0
   if (trace(atoi(argv[1])) < 0) {
     fprintf(2, "%s: trace failed\n", argv[0]);
     exit(1);
