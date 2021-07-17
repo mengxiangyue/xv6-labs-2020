@@ -30,16 +30,6 @@ procinit(void)
   initlock(&pid_lock, "nextpid");
   for(p = proc; p < &proc[NPROC]; p++) {
       initlock(&p->lock, "proc");
-
-      // Allocate a page for the process's kernel stack.
-      // Map it high in memory, followed by an invalid
-      // guard page.
-      char *pa = kalloc();
-      if(pa == 0)
-        panic("kalloc");
-      uint64 va = KSTACK((int) (p - proc));
-      kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
-      p->kstack = va;
   }
   kvminithart();
 }
@@ -121,6 +111,21 @@ found:
     return 0;
   }
 
+  ukvminit(p);
+
+  // copy from procinit method
+  char *pa = kalloc();
+  if (pa == 0) {
+    panic("kalloc");
+  }
+  // proc 指针指向的是 proc[0], p是proc里面的一个元素  
+  // 如果两个指针是指向同一个数组，他们可以相减，结果为两个指针之间的元素数目
+  // 这里表示初始化第几个 kstack，并且包含guard page
+  uint64 va = KSTACK((int)(p - proc)); 
+  // 将 va到pa的映射关系 计算到 kpagetable 中
+  ukvmmap(p->kpagetable, va, (uint64)pa, PGSIZE, PTE_R|PTE_W);
+  p->kstack = va;
+
   // Set up new context to start executing at forkret,
   // which returns to user space.
   memset(&p->context, 0, sizeof(p->context));
@@ -141,6 +146,8 @@ freeproc(struct proc *p)
   p->trapframe = 0;
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
+  if(p->kpagetable) 
+    proc_freekpagetable(p->kpagetable);
   p->pagetable = 0;
   p->sz = 0;
   p->pid = 0;
@@ -193,6 +200,23 @@ proc_freepagetable(pagetable_t pagetable, uint64 sz)
   uvmunmap(pagetable, TRAMPOLINE, 1, 0);
   uvmunmap(pagetable, TRAPFRAME, 1, 0);
   uvmfree(pagetable, sz);
+}
+
+// free a page table without also freeing the leaf physical memory pages.
+void
+proc_freekpagetable(pagetable_t kpagetable)
+{
+  for (int i = 0; i < 512; i++) {
+    pte_t pte = kpagetable[i];
+    if(pte & PTE_V) {
+      kpagetable[i] = 0;
+      if((pte & (PTE_R|PTE_W|PTE_X)) == 0) {
+        uint64 child = PTE2PA(pte);
+        proc_freekpagetable((pagetable_t)child);
+      }
+    }
+  }
+  kfree((void*)kpagetable);
 }
 
 // a user program that calls exec("/init")
@@ -473,6 +497,11 @@ scheduler(void)
         // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
+
+        // 参考 kvminithart()
+        w_satp(MAKE_SATP(p->kpagetable));
+        sfence_vma();
+
         swtch(&c->context, &p->context);
 
         // Process is done running for now.
@@ -486,6 +515,8 @@ scheduler(void)
 #if !defined (LAB_FS)
     if(found == 0) {
       intr_on();
+      // 如果没有进程运行 使用内核page table
+      kvminithart();
       asm volatile("wfi");
     }
 #else
