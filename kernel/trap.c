@@ -11,6 +11,8 @@ uint ticks;
 
 extern char trampoline[], uservec[], userret[];
 
+extern char trapframe_alarm[512];
+
 // in kernelvec.S, calls kerneltrap().
 void kernelvec();
 
@@ -78,7 +80,26 @@ usertrap(void)
 
   // give up the CPU if this is a timer interrupt.
   if(which_dev == 2)
+  {
+    if (p->alarm_interval != 0)
+    {
+      p->alarm_cnt += 1;
+      if (p->alarm_cnt == p->alarm_interval)
+      {
+        memmove(trapframe_alarm, p->trapframe, 512);
+        // RISC-V在中断和异常时的返回地址定义是不同的。
+        // 出现中断时，中断返回地址epc被指向下一跳指令，因为中断时的指令被正确执行。 
+        // 出现异常时，epc则指向当前指令，因为当前指令触发了异常。 
+        // 然而，如果异常由ecall或ebreak产生，直接跳回返回地址则会造成死循环（执行ecall导致重新进入异常）。 
+        // 正确的做法是时在异常处理中手动改变epc指向下一条指令。
+        // 现在ecall/ebreak都是4字节指令，因此简单设定epc=epc+4即可。
+        p->trapframe->epc = p->alarm_handler;
+      }
+      
+    }
     yield();
+  }
+    
 
   usertrapret();
 }

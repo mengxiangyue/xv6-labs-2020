@@ -21,6 +21,8 @@ static void freeproc(struct proc *p);
 
 extern char trampoline[]; // trampoline.S
 
+char trapframe_alarm[512]; // 存储trapframe alarm 返回的时候使用
+
 // initialize the proc table at boot time.
 void
 procinit(void)
@@ -126,6 +128,10 @@ found:
   memset(&p->context, 0, sizeof(p->context));
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
+
+  p->alarm_handler = 0;
+  p->alarm_cnt = 0;
+  p->alarm_interval = 0;
 
   return p;
 }
